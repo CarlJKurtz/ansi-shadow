@@ -1,5 +1,7 @@
 # ansi-shadow
 
+Live demo: https://carljkurtz.github.io/ansi-shadow/
+
 Simple browser-based ANSI Shadow text generator for use in shell applications.
 Using [ANSI-Shadow](https://github.com/xero/figlet-fonts/blob/main/ANSI%20Shadow.flf).
 Written using GPT-5.3-Codex
