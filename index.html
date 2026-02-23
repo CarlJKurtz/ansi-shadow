@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Block ASCII Tool</title>
+  <style>
+    :root { --bg: #fff; --fg: #111; --panel: #fff; --border: #ccc; }
+    body {
+      font-family: sans-serif;
+      margin: 16px;
+      background: var(--bg);
+      color: var(--fg);
+      display: flex;
+      flex-direction: column;
+      padding-bottom: calc(54px + env(safe-area-inset-bottom));
+    }
+    body.dark { --bg: #111; --fg: #eee; --panel: #1a1a1a; --border: #555; }
+    textarea, pre { width: 100%; box-sizing: border-box; background: transparent; color: var(--fg); border: 0; margin: 0; }
+    textarea { min-height: 132px; resize: vertical; padding: 4px; }
+    pre { white-space: pre; overflow: auto; padding: 4px; min-height: 0; }
+    input[type="number"], button {
+      background: var(--panel);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font: inherit;
+      padding: 4px 8px;
+    }
+    input[type="number"] {
+      width: 96px;
+      color-scheme: light;
+    }
+    body.dark input[type="number"] { color-scheme: dark; }
+    button { cursor: pointer; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .boxed {
+      position: relative;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 12px 10px;
+    }
+    .boxed-label {
+      position: absolute;
+      top: 0;
+      left: 10px;
+      transform: translateY(-50%);
+      background: var(--bg);
+      padding: 0 6px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+    }
+    .boxed .row + .row { margin-top: 8px; }
+    .top-row {
+      display: flex;
+      gap: 14px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+    .top-row > .boxed { display: flex; flex-direction: column; }
+    .settings-box { flex: 0 0 20%; }
+    .input-box { flex: 1 1 0; }
+    .input-box textarea { flex: 1; min-height: 0; }
+    .output-box {
+      margin-top: 14px;
+      display: block;
+    }
+    .output-box pre { min-height: 0; }
+    .output-actions {
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      bottom: calc(10px + env(safe-area-inset-bottom));
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .output-actions > * { pointer-events: auto; }
+    .copy-wrap { display: flex; align-items: center; gap: 8px; }
+    #copyStatus { font-size: 12px; opacity: 0.8; }
+    .square-switch {
+      position: relative;
+      width: 34px;
+      height: 20px;
+      display: inline-block;
+    }
+    .square-switch input {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .square-switch-ui {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      background: var(--panel);
+      box-sizing: border-box;
+      transition: background 120ms ease;
+    }
+    .square-switch-ui::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      background: var(--bg);
+      box-sizing: border-box;
+      transform: translateY(-50%);
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    .square-switch input:checked + .square-switch-ui {
+      background: var(--fg);
+    }
+    .square-switch input:checked + .square-switch-ui::after {
+      transform: translate(14px, -50%);
+      background: var(--panel);
+    }
+    @media (max-width: 900px) {
+      .top-row { flex-direction: column; }
+      .settings-box, .input-box { flex: 1 1 auto; width: 100%; }
+      .output-actions { left: 10px; right: 10px; }
+    }
+  </style>
+</head>
+<body class="dark">
+  <div class="top-row">
+    <div class="boxed settings-box">
+      <span class="boxed-label">Settings</span>
+
+      <div class="row">
+        <label for="widthCounter">Width:</label>
+        <input id="widthCounter" type="number" min="20" max="200" value="80">
+      </div>
+
+      <div class="row">
+        <label for="outlineToggle">Outline box:</label>
+        <input id="outlineToggle" type="checkbox">
+      </div>
+
+      <div class="row">
+        <label for="shellToggle">Shell echo:</label>
+        <input id="shellToggle" type="checkbox">
+      </div>
+    </div>
+
+    <div class="boxed input-box">
+      <span class="boxed-label">Input</span>
+      <textarea id="textInput" rows="4">Huzzah!</textarea>
+    </div>
+  </div>
+
+  <div class="boxed output-box">
+    <span class="boxed-label">Output</span>
+    <pre id="output"></pre>
+  </div>
+
+  <div class="output-actions">
+    <label class="square-switch" for="darkToggle" title="Toggle dark mode">
+      <input id="darkToggle" type="checkbox" aria-label="Toggle dark mode" checked>
+      <span class="square-switch-ui"></span>
+    </label>
+    <div class="copy-wrap">
+      <span id="copyStatus"></span>
+      <button id="copyButton" type="button">copy</button>
+    </div>
+  </div>
+
+  <script>
+    const textInput = document.getElementById("textInput");
+    const widthCounter = document.getElementById("widthCounter");
+    const darkToggle = document.getElementById("darkToggle");
+    const outlineToggle = document.getElementById("outlineToggle");
+    const shellToggle = document.getElementById("shellToggle");
+    const copyButton = document.getElementById("copyButton");
+    const copyStatus = document.getElementById("copyStatus");
+    const output = document.getElementById("output");
+
+    const ANSI_SHADOW_GLYPHS = {
+      " ": ["    ", "    ", "    ", "    ", "    ", "    "],
+      "!": ["██╗", "██║", "██║", "╚═╝", "██╗", "╚═╝"],
+      "(": [" ██╗", "██╔╝", "██║ ", "██║ ", "╚██╗", " ╚═╝"],
+      ")": ["██╗ ", "╚██╗", " ██║", " ██║", "██╔╝", "╚═╝ "],
+      ",": ["  ", "  ", "  ", "  ", "▄█╗", "╚═╝"],
+      "-": ["     ", "     ", "█████╗", "╚════╝", "     ", "     "],
+      ".": ["  ", "  ", "  ", "  ", "██╗", "╚═╝"],
+      "/": ["  ██╗", "  ██╔╝", "  ██╔╝ ", "  ██╔╝ ", "██╔╝ ", "╚═╝ "],
+      ":": [" ", "██╗", "╚═╝", "██╗", "╚═╝", " "],
+      ";": [" ", "██╗", "╚═╝", "▄█╗", "▀═╝", " "],
+      "<": [" ██╗", " ██╔╝", "██╔╝ ", "╚██╗ ", " ╚██╗", " ╚═╝"],
+      ">": ["██╗ ", "╚██╗ ", " ╚██╗", " ██╔╝", "██╔╝ ", "╚═╝ "],
+      "?": ["██████╗ ", "╚════██╗", " ▄███╔╝", " ▀▀══╝ ", " ██╗ ", " ╚═╝ "],
+      "_": [" ", " ", " ", " ", "███████╗", "╚══════╝"],
+      "0": [" ██████╗ ", "██╔═████╗", "██║██╔██║", "████╔╝██║", "╚██████╔╝", " ╚═════╝ "],
+      "1": [" ██╗", "███║", "╚██║", " ██║", " ██║", " ╚═╝"],
+      "2": ["██████╗ ", "╚════██╗", " █████╔╝", "██╔═══╝ ", "███████╗", "╚══════╝"],
+      "3": ["██████╗ ", "╚════██╗", " █████╔╝", " ╚═══██╗", "██████╔╝", "╚═════╝ "],
+      "4": ["██╗ ██╗", "██║ ██║", "███████║", "╚════██║", "     ██║", "     ╚═╝"],
+      "5": ["███████╗", "██╔════╝", "███████╗", "╚════██║", "███████║", "╚══════╝"],
+      "6": [" ██████╗ ", "██╔════╝ ", "███████╗ ", "██╔═══██╗", "╚██████╔╝", " ╚═════╝ "],
+      "7": ["███████╗", "╚════██║", "   ██╔╝ ", "  ██╔╝  ", "  ██║   ", "  ╚═╝   "],
+      "8": [" █████╗ ", "██╔══██╗", "╚█████╔╝", "██╔══██╗", "╚█████╔╝", " ╚════╝ "],
+      "9": [" █████╗ ", "██╔══██╗", "╚██████║", " ╚═══██║", " █████╔╝", " ╚════╝ "],
+      "A": [" █████╗ ", "██╔══██╗", "███████║", "██╔══██║", "██║  ██║", "╚═╝  ╚═╝"],
+      "B": ["██████╗ ", "██╔══██╗", "██████╔╝", "██╔══██╗", "██████╔╝", "╚═════╝ "],
+      "C": [" ██████╗", "██╔════╝", "██║     ", "██║     ", "╚██████╗", " ╚═════╝"],
+      "D": ["██████╗ ", "██╔══██╗", "██║  ██║", "██║  ██║", "██████╔╝", "╚═════╝ "],
+      "E": ["███████╗", "██╔════╝", "█████╗  ", "██╔══╝  ", "███████╗", "╚══════╝"],
+      "F": ["███████╗", "██╔════╝", "█████╗  ", "██╔══╝  ", "██║     ", "╚═╝     "],
+      "G": [" ██████╗ ", "██╔════╝ ", "██║  ███╗", "██║   ██║", "╚██████╔╝", " ╚═════╝ "],
+      "H": ["██╗  ██╗", "██║  ██║", "███████║", "██╔══██║", "██║  ██║", "╚═╝  ╚═╝"],
+      "I": ["██╗", "██║", "██║", "██║", "██║", "╚═╝"],
+      "J": ["     ██╗", "     ██║", "     ██║", "██   ██║", "╚█████╔╝", " ╚════╝ "],
+      "K": ["██╗ ██╗", "██║██╔╝", "█████╔╝ ", "██╔═██╗ ", "██║  ██╗", "╚═╝  ╚═╝"],
+      "L": ["██╗     ", "██║     ", "██║     ", "██║     ", "███████╗", "╚══════╝"],
+      "M": ["███╗   ███╗", "████╗ ████║", "██╔████╔██║", "██║╚██╔╝██║", "██║ ╚═╝ ██║", "╚═╝     ╚═╝"],
+      "N": ["███╗   ██╗", "████╗  ██║", "██╔██╗ ██║", "██║╚██╗██║", "██║ ╚████║", "╚═╝  ╚═══╝"],
+      "O": [" ██████╗ ", "██╔═══██╗", "██║   ██║", "██║   ██║", "╚██████╔╝", " ╚═════╝ "],
+      "P": ["██████╗ ", "██╔══██╗", "██████╔╝", "██╔═══╝ ", "██║     ", "╚═╝     "],
+      "Q": [" ██████╗ ", "██╔═══██╗", "██║   ██║", "██║▄▄ ██║", "╚██████╔╝", " ╚══▀▀═╝ "],
+      "R": ["██████╗ ", "██╔══██╗", "██████╔╝", "██╔══██╗", "██║  ██║", "╚═╝  ╚═╝"],
+      "S": ["███████╗", "██╔════╝", "███████╗", "╚════██║", "███████║", "╚══════╝"],
+      "T": ["████████╗", "╚══██╔══╝", "   ██║   ", "   ██║   ", "   ██║   ", "   ╚═╝   "],
+      "U": ["██╗   ██╗", "██║   ██║", "██║   ██║", "██║   ██║", "╚██████╔╝", " ╚═════╝ "],
+      "V": ["██╗   ██╗", "██║   ██║", "██║   ██║", "╚██╗ ██╔╝", " ╚████╔╝ ", "  ╚═══╝  "],
+      "W": ["██╗    ██╗", "██║    ██║", "██║ █╗ ██║", "██║███╗██║", "╚███╔███╔╝", " ╚══╝╚══╝ "],
+      "X": ["██╗  ██╗", "╚██╗██╔╝", " ╚███╔╝ ", " ██╔██╗ ", "██╔╝ ██╗", "╚═╝  ╚═╝"],
+      "Y": ["██╗   ██╗", "╚██╗ ██╔╝", " ╚████╔╝ ", "  ╚██╔╝  ", "   ██║   ", "   ╚═╝   "],
+      "Z": ["███████╗", "╚══███╔╝", "  ███╔╝ ", "  ███╔╝ ", "███████╗", "╚══════╝"]
+    };
+    const SHADOW_HEIGHT = 6;
+    const SHADOW_GAP = 1;
+    const SHADOW_MAX_KERN = 3;
+    const shadowGlyphCache = new Map();
+    const shadowWidthCache = new Map();
+    const shadowKerningCache = new Map();
+
+    function getShadowGlyph(char) {
+      const key = char.toUpperCase();
+      if (!shadowGlyphCache.has(key)) {
+        const raw = ANSI_SHADOW_GLYPHS[key] || ANSI_SHADOW_GLYPHS["?"];
+        shadowGlyphCache.set(
+          key,
+          key === " "
+            ? raw.slice()
+            : raw.map((row) => row.replace(/\s+$/, ""))
+        );
+      }
+      return shadowGlyphCache.get(key);
+    }
+
+    function getShadowGlyphWidth(char) {
+      const key = char.toUpperCase();
+      if (!shadowWidthCache.has(key)) {
+        const glyph = getShadowGlyph(key);
+        shadowWidthCache.set(
+          key,
+          glyph.reduce((max, row) => Math.max(max, row.length), 0)
+        );
+      }
+      return shadowWidthCache.get(key);
+    }
+
+    function getPairKerning(leftChar, rightChar) {
+      const leftKey = leftChar.toUpperCase();
+      const rightKey = rightChar.toUpperCase();
+      const cacheKey = `${leftKey}\u0000${rightKey}`;
+
+      if (shadowKerningCache.has(cacheKey)) {
+        return shadowKerningCache.get(cacheKey);
+      }
+
+      if (leftKey.trim() === "" || rightKey.trim() === "") {
+        shadowKerningCache.set(cacheKey, 0);
+        return 0;
+      }
+
+      const leftGlyph = getShadowGlyph(leftKey);
+      const rightGlyph = getShadowGlyph(rightKey);
+      const leftWidth = getShadowGlyphWidth(leftKey);
+      const maxShift = Math.min(
+        SHADOW_MAX_KERN,
+        Math.max(0, leftWidth + SHADOW_GAP - 1)
+      );
+
+      let bestShift = 0;
+      for (let shift = maxShift; shift > 0; shift--) {
+        const startX = leftWidth + SHADOW_GAP - shift;
+        let collision = false;
+        for (let row = 0; row < SHADOW_HEIGHT && !collision; row++) {
+          const rightRow = rightGlyph[row] || "";
+          for (let col = 0; col < rightRow.length; col++) {
+            if (rightRow[col] === " ") continue;
+            const leftCol = startX + col;
+            const leftRow = leftGlyph[row] || "";
+            if (leftCol >= 0 && leftCol < leftRow.length && leftRow[leftCol] !== " ") {
+              collision = true;
+              break;
+            }
+          }
+        }
+        if (!collision) {
+          bestShift = shift;
+          break;
+        }
+      }
+
+      shadowKerningCache.set(cacheKey, bestShift);
+      return bestShift;
+    }
+
+    function wrapShadowLine(sourceLine, targetWidth) {
+      const maxWidth = Math.max(20, targetWidth);
+      if (sourceLine.length === 0) return [""];
+
+      const wrapped = [];
+      let current = "";
+      let currentWidth = 0;
+
+      for (const char of sourceLine) {
+        const glyphWidth = getShadowGlyphWidth(char);
+        if (!current.length) {
+          current = char;
+          currentWidth = glyphWidth;
+          continue;
+        }
+
+        const prevChar = current[current.length - 1];
+        const kerning = getPairKerning(prevChar, char);
+        const addition = SHADOW_GAP + glyphWidth - kerning;
+
+        if (currentWidth + addition > maxWidth) {
+          wrapped.push(current);
+          current = char;
+          currentWidth = glyphWidth;
+          continue;
+        }
+
+        current += char;
+        currentWidth += addition;
+      }
+
+      wrapped.push(current);
+      return wrapped;
+    }
+
+    function renderShadowLine(line) {
+      if (!line) return Array.from({ length: SHADOW_HEIGHT }, () => "");
+
+      const chars = line.split("");
+      const origins = [];
+      let lineWidth = 0;
+
+      chars.forEach((char, index) => {
+        const glyphWidth = getShadowGlyphWidth(char);
+        let origin = 0;
+        if (index > 0) {
+          const prevChar = chars[index - 1];
+          const prevWidth = getShadowGlyphWidth(prevChar);
+          const prevOrigin = origins[index - 1];
+          const kerning = getPairKerning(prevChar, char);
+          origin = prevOrigin + prevWidth + SHADOW_GAP - kerning;
+        }
+        origins.push(origin);
+        lineWidth = Math.max(lineWidth, origin + glyphWidth);
+      });
+
+      const rows = Array.from({ length: SHADOW_HEIGHT }, () =>
+        Array(lineWidth).fill(" ")
+      );
+
+      chars.forEach((char, index) => {
+        const glyph = getShadowGlyph(char);
+        const origin = origins[index];
+        for (let row = 0; row < SHADOW_HEIGHT; row++) {
+          const glyphRow = glyph[row] || "";
+          for (let col = 0; col < glyphRow.length; col++) {
+            const ch = glyphRow[col];
+            if (ch !== " ") rows[row][origin + col] = ch;
+          }
+        }
+      });
+
+      return rows.map((row) => row.join("").replace(/\s+$/, ""));
+    }
+
+    function toAnsiShadowFont(text, targetWidth) {
+      if (!text) return "";
+
+      const logicalLines = text.split("\n");
+      const wrappedLines = [];
+      logicalLines.forEach((line) => {
+        wrappedLines.push(...wrapShadowLine(line, targetWidth));
+      });
+
+      const rendered = [];
+      wrappedLines.forEach((line) => {
+        rendered.push(...renderShadowLine(line));
+      });
+      return rendered.join("\n");
+    }
+
+    function wrapInOutlineBox(text) {
+      const lines = text.split("\n");
+      const innerWidth = lines.reduce((max, line) => Math.max(max, line.length), 0);
+      const top = `╔${"═".repeat(innerWidth + 2)}╗`;
+      const bottom = `╙${"─".repeat(innerWidth + 2)}╜`;
+      const body = lines.map((line) => `║ ${line.padEnd(innerWidth, " ")} ║`);
+      return [top, ...body, bottom].join("\n");
+    }
+
+    function escapeForEcho(line) {
+      return line
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, "\\\"")
+        .replace(/\$/g, "\\$")
+        .replace(/`/g, "\\`");
+    }
+
+    function wrapInEchoLines(text) {
+      return text
+        .split("\n")
+        .map((line) => `echo "${escapeForEcho(line)}"`)
+        .join("\n");
+    }
+
+    function getWidth() {
+      let width = Number(widthCounter.value);
+      if (!Number.isFinite(width)) width = 80;
+      width = Math.max(20, Math.min(200, Math.round(width)));
+      widthCounter.value = String(width);
+      return width;
+    }
+
+    function render() {
+      const width = getWidth();
+      let rendered = toAnsiShadowFont(textInput.value, width);
+
+      if (outlineToggle.checked) {
+        rendered = wrapInOutlineBox(rendered);
+      }
+      if (shellToggle.checked) {
+        rendered = wrapInEchoLines(rendered);
+      }
+
+      output.textContent = rendered;
+    }
+
+    function applyTheme() {
+      document.body.classList.toggle("dark", darkToggle.checked);
+    }
+
+    let copyStatusTimer;
+    async function copyToClipboard() {
+      try {
+        await navigator.clipboard.writeText(output.textContent);
+        copyStatus.textContent = "Copied";
+      } catch {
+        copyStatus.textContent = "Copy failed";
+      }
+      clearTimeout(copyStatusTimer);
+      copyStatusTimer = setTimeout(() => {
+        copyStatus.textContent = "";
+      }, 1200);
+    }
+
+    textInput.addEventListener("input", render);
+    widthCounter.addEventListener("input", render);
+    widthCounter.addEventListener("change", render);
+    darkToggle.addEventListener("change", applyTheme);
+    outlineToggle.addEventListener("change", render);
+    shellToggle.addEventListener("change", render);
+    copyButton.addEventListener("click", copyToClipboard);
+    applyTheme();
+    render();
+  </script>
+</body>
+</html>
